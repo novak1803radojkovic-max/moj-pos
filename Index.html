@@ -1,1 +1,114 @@
 
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOJ POS</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#15171c;color:#f5f5f5;font-family:Arial,sans-serif}
+header{padding:17px;background:#22252d;color:#e7c18d;font-size:24px;font-weight:bold;display:flex;justify-content:space-between;align-items:center}
+nav{display:flex;gap:7px;padding:10px;overflow:auto;background:#1c1f26}
+button{border:0;border-radius:9px;padding:12px;background:#353944;color:#fff;font-size:15px;cursor:pointer}
+button.active,.gold{background:#93683e}
+main{padding:12px}
+.panel{background:#22252d;border-radius:13px;padding:14px;margin-bottom:13px}
+h2{font-size:20px;margin:0 0 12px}
+input,select{width:100%;padding:12px;margin:5px 0 12px;background:#15171c;color:white;border:1px solid #4b4e58;border-radius:8px;font-size:16px}
+.roomtabs{display:flex;gap:8px;margin-bottom:12px}
+.roomtabs button{flex:1}
+#floor{position:relative;height:440px;background-color:#37383b;background-image:linear-gradient(#45464a 1px,transparent 1px),linear-gradient(90deg,#45464a 1px,transparent 1px);background-size:25px 25px;border:2px solid #555;border-radius:10px;overflow:hidden}
+.table{position:absolute;width:82px;min-height:65px;background:#92683b;border:2px solid #b58a55;border-radius:9px;display:flex;flex-direction:column;justify-content:center;align-items:center;touch-action:none;user-select:none;cursor:grab;padding:4px}
+.table.occupied{background:#168c70;border-color:#35c6a0}
+.table b{font-size:15px}.table small{font-size:11px;margin-top:4px}
+.bar{position:absolute;bottom:8px;left:20%;width:60%;padding:10px;background:#563b2c;text-align:center;border-radius:8px;color:#f2ddc9}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.item{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#333741;border-radius:8px;padding:10px;margin:7px 0}
+.total{font-size:25px;color:#e7c18d;font-weight:bold}
+.small{font-size:12px;color:#b6b8c0}
+[hidden]{display:none!important}
+@media(min-width:750px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}#floor{height:650px}}
+</style>
+</head>
+<body>
+<header><span>☕ MOJ POS</span><span class="small">CAFFE CENTAR</span></header>
+<nav>
+<button class="active" onclick="page('tables',this)">🪑 Stolovi</button>
+<button onclick="page('menu',this)">🍹 Artikli</button>
+<button onclick="page('stock',this)">📦 Magacin</button>
+</nav>
+<main>
+<section id="tables" class="panel">
+<h2>Raspored lokala</h2>
+<div class="roomtabs">
+<button class="active" onclick="room('Unutra',this)">Unutra</button>
+<button onclick="room('Bašta',this)">Bašta</button>
+<button onclick="room('Separe',this)">Separe</button>
+</div>
+<p class="small">Pritisni i drži sto, pa ga prevuci na željeno mesto.</p>
+<div id="floor"><div class="bar">BAR</div></div>
+<p><button class="gold" onclick="addTable()">＋ Dodaj sto</button></p>
+</section>
+<section id="order" class="panel" hidden>
+<h2 id="orderTitle">Račun</h2>
+<div id="orderItems"></div>
+<p class="total">Ukupno: <span id="total">0</span> din</p>
+<h3>Dodaj artikal</h3><div id="orderMenu" class="grid"></div>
+<button onclick="newBill()">＋ Novi račun na ovom stolu</button>
+<hr>
+<button class="gold" onclick="pay('Keš')">💵 Keš</button>
+<button class="gold" onclick="pay('Kartica')">💳 Kartica</button>
+<button class="gold" onclick="pay('IPS QR')">▦ QR plaćanje</button>
+<p id="notice" class="small"></p>
+<button onclick="page('tables')">← Stolovi</button>
+</section>
+<section id="menu" class="panel" hidden>
+<h2>Dodavanje artikla</h2>
+<label>Naziv</label><input id="pname" placeholder="Npr. Cappuccino">
+<label>Kategorija</label><select id="pcat"><option>Kafe</option><option>Sokovi</option><option>Piva</option><option>Vode</option><option>Kokteli</option><option>Hrana</option><option>Palačinke</option><option>Ostalo</option></select>
+<label>Cena (din)</label><input id="pprice" type="number" placeholder="200">
+<label>Stanje magacina</label><input id="pstock" type="number" placeholder="50">
+<button class="gold" onclick="addProduct()">Sačuvaj artikal</button>
+<div id="products"></div>
+</section>
+<section id="stock" class="panel" hidden><h2>Magacinsko stanje</h2><div id="stockList"></div></section>
+</main>
+<script>
+const get=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
+let products=get('mp_products',[
+{name:'Espresso',cat:'Kafe',price:180,stock:100},
+{name:'Domaća kafa',cat:'Kafe',price:150,stock:100},
+{name:'Coca-Cola',cat:'Sokovi',price:200,stock:100},
+{name:'Zaječarsko',cat:'Piva',price:220,stock:100},
+{name:'Aqua Viva',cat:'Vode',price:150,stock:100}
+]);
+let rooms=get('mp_rooms',{Unutra:[],Bašta:[],Separe:[]});
+let sales=get('mp_sales',[]);
+let activeRoom='Unutra',current=null,bill=0;
+function persist(){localStorage.setItem('mp_products',JSON.stringify(products));localStorage.setItem('mp_rooms',JSON.stringify(rooms));localStorage.setItem('mp_sales',JSON.stringify(sales))}
+function ensure(){for(let r of ['Unutra','Bašta','Separe'])if(!rooms[r]||!rooms[r].length)rooms[r]=Array.from({length:r==='Unutra'?10:4},(_,i)=>({name:'Sto '+(i+1),x:10+(i%4)*22,y:8+Math.floor(i/4)*28,bills:[[]]}))}
+ensure();
+function page(id,btn){document.querySelectorAll('main section').forEach(s=>s.hidden=true);document.getElementById(id).hidden=false;if(btn){document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active')}draw()}
+function room(r,btn){activeRoom=r;document.querySelectorAll('.roomtabs button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');draw()}
+function draw(){
+const floor=document.getElementById('floor');floor.querySelectorAll('.table').forEach(e=>e.remove());
+rooms[activeRoom].forEach((t,i)=>{let count=t.bills.reduce((n,b)=>n+b.length,0);let el=document.createElement('div');el.className='table'+(count?' occupied':'');el.style.left=t.x+'%';el.style.top=t.y+'%';el.innerHTML='<b>'+t.name+'</b><small>'+(count?'Otvoren račun':'Slobodan')+'</small>';el.onpointerdown=e=>dragStart(e,el,t);el.ondblclick=()=>openOrder(i);floor.appendChild(el)});
+products.innerHTML=products.map((p,i)=>`<div class="item"><span>${p.name}<br><span class="small">${p.cat} · stanje ${p.stock}</span></span><span>${p.price} din<br><button onclick="editProduct(${i})">Uredi</button></span></div>`).join('');
+stockList.innerHTML=products.map(p=>`<div class="item">${p.name}<span>${p.stock}</span></div>`).join('');
+if(!document.getElementById('order').hidden)drawOrder();
+}
+function dragStart(e,el,t){if(e.button!==undefined&&e.button!==0)return;e.preventDefault();let floor=document.getElementById('floor'),rect=floor.getBoundingClientRect(),sx=e.clientX,sy=e.clientY,ox=t.x,oy=t.y;el.setPointerCapture(e.pointerId);function move(ev){t.x=Math.max(0,Math.min(84,ox+(ev.clientX-sx)/rect.width*100));t.y=Math.max(0,Math.min(80,oy+(ev.clientY-sy)/rect.height*100));el.style.left=t.x+'%';el.style.top=t.y+'%'}function end(){el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',end);persist()}el.addEventListener('pointermove',move);el.addEventListener('pointerup',end)}
+function addTable(){let n=prompt('Naziv novog stola?','Sto '+(rooms[activeRoom].length+1));if(n){rooms[activeRoom].push({name:n,x:10,y:10,bills:[[]]});persist();draw()}}
+function openOrder(i){current=i;bill=0;document.getElementById('tables').hidden=true;document.getElementById('order').hidden=false;drawOrder()}
+function drawOrder(){if(current===null)return;let t=rooms[activeRoom][current];orderTitle.textContent=t.name+' • Račun '+(bill+1);let items=t.bills[bill]||[];orderItems.innerHTML=items.map((it,j)=>`<div class="item">${it.name} × ${it.qty}<span>${it.price*it.qty} din <button onclick="removeItem(${j})">−</button></span></div>`).join('')||'<p class="small">Račun je prazan.</p>';total.textContent=items.reduce((s,it)=>s+it.price*it.qty,0);orderMenu.innerHTML=products.map((p,i)=>`<button onclick="addToBill(${i})">${p.name}<br>${p.price} din</button>`).join('')}
+function addToBill(i){let items=rooms[activeRoom][current].bills[bill],p=products[i],it=items.find(x=>x.name===p.name);if(it)it.qty++;else items.push({name:p.name,price:p.price,qty:1,pi:i});persist();drawOrder()}
+function removeItem(i){let a=rooms[activeRoom][current].bills[bill];a[i].qty--;if(a[i].qty<=0)a.splice(i,1);persist();drawOrder()}
+function newBill(){rooms[activeRoom][current].bills.push([]);bill=rooms[activeRoom][current].bills.length-1;persist();drawOrder()}
+function addProduct(){let n=pname.value.trim(),p=Number(pprice.value);if(!n||p<=0){alert('Unesi naziv i cenu.');return}products.push({name:n,cat:pcat.value,price:p,stock:Number(pstock.value)||0});pname.value='';pprice.value='';pstock.value='';persist();draw()}
+function editProduct(i){let p=products[i],n=prompt('Naziv',p.name);if(n===null)return;let c=prompt('Cena',p.price);if(c===null)return;let s=prompt('Stanje magacina',p.stock);p.name=n;p.price=Number(c)||0;p.stock=Number(s)||0;persist();draw()}
+function pay(method){let t=rooms[activeRoom][current],items=t.bills[bill],sum=items.reduce((s,it)=>s+it.price*it.qty,0);if(!sum){alert('Račun je prazan.');return}if(method!=='Keš'){notice.textContent=method==='Kartica'?'Za karticu je potreban bankarski POS terminal.':'Za pravi IPS QR potreban je bankarski sistem; ovaj prototip ne naplaćuje uplatu.';return}sales.push({sum,method});items.forEach(it=>{if(products[it.pi])products[it.pi].stock=Math.max(0,products[it.pi].stock-it.qty)});t.bills[bill]=[];notice.textContent='Demo naplata evidentirana. Fiskalna kasa još nije povezana.';persist();drawOrder()}
+draw();
+</script>
+</body>
+</html>
